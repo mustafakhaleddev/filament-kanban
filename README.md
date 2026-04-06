@@ -2,27 +2,35 @@
 
 An advanced Kanban Board package for Filament v5. Drop it into any Resource's List page to replace the table with a fully interactive board.
 
+## Requirements
+
+- PHP 8.3+
+- Laravel 13+
+- Filament 5+
+
 ## Features
 
 - Drag-and-drop cards between columns (SortableJS)
 - Enum-based or relationship-based columns
+- `KanbanStatusEnum` interface for defining transitions & WIP limits on the enum itself
 - Card click action (modal, slide-over, or custom)
-- Card footer actions (edit, delete, custom)
+- Card footer actions (edit, delete, URL navigation, custom)
 - Column header actions (create with pre-filled status)
-- Filters dropdown with active count badge
-- Search bar
+- Filters dropdown with active count badge & reset
+- Search bar with relationship support
 - Collapsible columns (persisted in localStorage)
-- WIP limits with visual warnings
+- WIP limits with visual warnings and server-side enforcement
 - Column summaries (aggregates)
 - Empty state per column
-- Drag constraints (restrict allowed moves)
+- Drag constraints (client-side + server-side)
 - `canMove()` callback for custom authorization
-- Server-side authorization (resource policy check)
+- Resource policy authorization on every move
 - Loading indicator
 - Custom views (card, column, board)
 - Dark mode support
-- Accessibility (ARIA attributes)
+- Accessibility (ARIA roles, labels, keyboard-friendly)
 - Publishable Blade views
+- Error notifications on failed moves
 
 ## Installation
 
@@ -40,9 +48,9 @@ use Wezlo\FilamentKanban\FilamentKanbanPlugin;
 ])
 ```
 
-## Usage
+## Quick Start
 
-Add the `HasKanbanBoard` trait to your Resource's List page and define the `kanban()` method:
+Add `HasKanbanBoard` to your Resource's List page and define `kanban()`:
 
 ```php
 use Wezlo\FilamentKanban\Concerns\HasKanbanBoard;
@@ -64,7 +72,85 @@ class ListLeads extends ListRecords
 }
 ```
 
-That's it. The board replaces the table with columns from your enum.
+The board replaces the table. Columns are generated from your enum. The breadcrumb shows "Board" instead of "List".
+
+## KanbanStatusEnum Interface
+
+For full integration, implement `KanbanStatusEnum` on your enum. This lets you define allowed transitions and WIP limits directly on the enum -- no board configuration needed.
+
+```php
+use Filament\Support\Contracts\HasIcon;
+use Filament\Support\Icons\Heroicon;
+use Wezlo\FilamentKanban\Contracts\KanbanStatusEnum;
+
+enum LeadStatus: string implements HasIcon, KanbanStatusEnum
+{
+    case New = 'new';
+    case Contacted = 'contacted';
+    case SiteVisit = 'site_visit';
+    case Negotiation = 'negotiation';
+    case Won = 'won';
+    case Lost = 'lost';
+
+    // Required by HasLabel (via KanbanStatusEnum)
+    public function getLabel(): string
+    {
+        return match ($this) {
+            self::New => 'New',
+            self::Contacted => 'Contacted',
+            // ...
+        };
+    }
+
+    // Required by HasColor (via KanbanStatusEnum)
+    public function getColor(): string
+    {
+        return match ($this) {
+            self::New => 'info',
+            self::Contacted => 'warning',
+            // ...
+        };
+    }
+
+    // Optional: HasIcon
+    public function getIcon(): Heroicon
+    {
+        return match ($this) {
+            self::New => Heroicon::Sparkles,
+            // ...
+        };
+    }
+
+    // Define which statuses each status can transition to.
+    // Return null to allow all transitions.
+    public function getAllowedTransitions(): ?array
+    {
+        return match ($this) {
+            self::New => [self::Contacted, self::Lost],
+            self::Contacted => [self::SiteVisit, self::Lost],
+            self::SiteVisit => [self::Negotiation, self::Lost],
+            self::Negotiation => [self::Won, self::Lost],
+            self::Won => null,  // no constraints
+            self::Lost => null,
+        };
+    }
+
+    // Set max cards per column. Return null for unlimited.
+    public function getWipLimit(): ?int
+    {
+        return match ($this) {
+            self::Negotiation => 10,
+            default => null,
+        };
+    }
+}
+```
+
+The board automatically reads these -- just use `->enumColumn('status', LeadStatus::class)` and transitions + WIP limits are enforced both client-side and server-side.
+
+**Without the interface:** Regular `BackedEnum` with `HasLabel` + `HasColor` still works. You just configure constraints on the board instead.
+
+**Explicit overrides:** Board-level `->dragConstraints()` and `->wipLimits()` override enum values per column.
 
 ## Configuration
 
@@ -74,8 +160,6 @@ That's it. The board replaces the table with columns from your enum.
 ```php
 ->enumColumn('status', LeadStatus::class)
 ```
-
-The enum should implement `HasLabel`, `HasColor`, and optionally `HasIcon` for automatic column styling.
 
 **Relationship-based** (columns from a related model):
 ```php
@@ -94,7 +178,7 @@ The enum should implement `HasLabel`, `HasColor`, and optionally `HasIcon` for a
 
 ### Card Click Action
 
-Open a modal/slide-over when clicking a card:
+Pass any Filament Action to fire when a card is clicked:
 
 ```php
 use Filament\Actions\Action;
@@ -113,7 +197,11 @@ use Filament\Infolists\Components\TextEntry;
 )
 ```
 
+Clicking opens the modal. Dragging still works -- the package distinguishes clicks from drags using SortableJS events.
+
 ### Card Footer Actions
+
+Icon buttons at the bottom of each card. Actions with `->url()` render as links, others use Livewire modals.
 
 ```php
 use Filament\Actions\Action;
@@ -134,7 +222,7 @@ use Filament\Support\Icons\Heroicon;
 
 ### Column Header Action
 
-Add a "+" button per column to create records with the status pre-filled:
+"+" button per column. The column value is pre-filled into the form.
 
 ```php
 use Filament\Actions\CreateAction;
@@ -143,6 +231,8 @@ use Filament\Actions\CreateAction;
 ```
 
 ### Filters
+
+Renders as a dropdown panel triggered by a filter icon next to the search bar. Shows active filter count as a badge.
 
 ```php
 use Filament\Forms\Components\Select;
@@ -155,7 +245,7 @@ use Filament\Forms\Components\Select;
         ->relationship('assignee', 'name')
         ->placeholder('All Assignees'),
 ])
-->filtersColumns(2) // grid columns for the filter panel
+->filtersColumns(2) // grid columns inside the dropdown
 ```
 
 ### Search
@@ -172,16 +262,18 @@ Supports dot notation for relationship columns.
 ->collapsible()
 ```
 
-State is persisted per column in `localStorage`.
+State persisted per column in `localStorage`.
 
 ### WIP Limits
+
+Define on the enum via `KanbanStatusEnum::getWipLimit()`, or on the board:
 
 ```php
 ->wipLimits(['new' => 5, 'in_progress' => 10])
 ->defaultWipLimit(20)
 ```
 
-The count badge turns red when a column exceeds its limit. Moves into over-limit columns are blocked server-side.
+The count badge turns red when over limit. Moves into over-limit columns are **blocked server-side** with a notification.
 
 ### Column Summaries
 
@@ -200,7 +292,7 @@ The count badge turns red when a column exceeds its limit. Moves into over-limit
 
 ### Drag Constraints
 
-Restrict which columns a card can be moved to:
+Define on the enum via `KanbanStatusEnum::getAllowedTransitions()`, or on the board:
 
 ```php
 ->dragConstraints([
@@ -209,15 +301,16 @@ Restrict which columns a card can be moved to:
 ])
 ```
 
-Enforced both client-side (SortableJS) and server-side.
+Enforced both client-side (SortableJS `put` function) and server-side (before DB update).
 
-### Authorization (canMove)
+### Authorization
 
-Custom callback to control whether a move is allowed:
+**Resource policy:** The package checks `Resource::canEdit($record)` before every move. Unauthorized moves show a danger notification.
+
+**canMove callback:** Custom business logic:
 
 ```php
 ->canMove(function ($record, $oldStatus, $newStatus) {
-    // Only project managers can move to 'won'
     if ($newStatus === 'won') {
         return auth()->user()->hasRole('project-manager');
     }
@@ -225,11 +318,11 @@ Custom callback to control whether a move is allowed:
 })
 ```
 
-The package also checks the Resource's `canEdit()` policy before any move.
+**Order of checks:** Resource policy -> Drag constraints -> WIP limits -> canMove callback. First failure blocks the move.
 
 ### Move Callback
 
-Run logic after a card is moved:
+Run logic after a successful move:
 
 ```php
 ->onRecordMoved(function ($record, $fromValue, $toValue) {

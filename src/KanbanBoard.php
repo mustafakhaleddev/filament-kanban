@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Wezlo\FilamentKanban\ColumnSources\EnumColumnSource;
 use Wezlo\FilamentKanban\ColumnSources\RelationshipColumnSource;
 use Wezlo\FilamentKanban\Contracts\KanbanColumnSource;
+use Wezlo\FilamentKanban\Contracts\KanbanStatusEnum;
 
 class KanbanBoard
 {
@@ -83,7 +84,7 @@ class KanbanBoard
     }
 
     /**
-     * @param  class-string<\BackedEnum>  $enumClass
+     * @param  class-string<\BackedEnum&KanbanStatusEnum>|class-string<\BackedEnum>  $enumClass
      */
     public function enumColumn(string $attribute, string $enumClass): static
     {
@@ -408,9 +409,25 @@ class KanbanBoard
         return null;
     }
 
+    /**
+     * Get WIP limit for a column, checking explicit limits, enum limits, then default.
+     */
     public function getWipLimit(string $columnValue): ?int
     {
-        return $this->wipLimits[$columnValue] ?? $this->defaultWipLimit;
+        // Explicit per-column limit takes priority
+        if (isset($this->wipLimits[$columnValue])) {
+            return $this->wipLimits[$columnValue];
+        }
+
+        // Check enum-defined limit
+        if ($this->columnSource instanceof EnumColumnSource && $this->columnSource->implementsKanbanStatus()) {
+            $enumLimits = $this->columnSource->resolveWipLimits();
+            if (isset($enumLimits[$columnValue])) {
+                return $enumLimits[$columnValue];
+            }
+        }
+
+        return $this->defaultWipLimit;
     }
 
     public function isOverWipLimit(KanbanColumn $column): bool
@@ -554,7 +571,15 @@ class KanbanBoard
 
     public function hasWipLimits(): bool
     {
-        return ! empty($this->wipLimits) || $this->defaultWipLimit !== null;
+        if (! empty($this->wipLimits) || $this->defaultWipLimit !== null) {
+            return true;
+        }
+
+        if ($this->columnSource instanceof EnumColumnSource && $this->columnSource->implementsKanbanStatus()) {
+            return ! empty($this->columnSource->resolveWipLimits());
+        }
+
+        return false;
     }
 
     public function hasColumnSummary(): bool
@@ -567,14 +592,26 @@ class KanbanBoard
         return $this->loading;
     }
 
+    /**
+     * Get drag constraints, merging explicit ones with enum-defined transitions.
+     * Explicit constraints take priority per column.
+     */
     public function getDragConstraints(): array
     {
-        return $this->dragConstraints;
+        $constraints = $this->dragConstraints;
+
+        // Merge enum-defined transitions (explicit constraints take priority)
+        if ($this->columnSource instanceof EnumColumnSource && $this->columnSource->implementsKanbanStatus()) {
+            $enumConstraints = $this->columnSource->resolveDragConstraints();
+            $constraints = array_merge($enumConstraints, $constraints);
+        }
+
+        return $constraints;
     }
 
     public function hasDragConstraints(): bool
     {
-        return ! empty($this->dragConstraints);
+        return ! empty($this->getDragConstraints());
     }
 
     public function getCanMove(): ?Closure
@@ -587,9 +624,10 @@ class KanbanBoard
      */
     public function isMoveAllowed(Model $record, string $oldValue, string $newValue): bool
     {
-        // Check drag constraints
-        if ($this->hasDragConstraints()) {
-            $allowed = $this->dragConstraints[$oldValue] ?? null;
+        // Check drag constraints (merged: explicit + enum-defined)
+        $constraints = $this->getDragConstraints();
+        if (! empty($constraints)) {
+            $allowed = $constraints[$oldValue] ?? null;
             if ($allowed !== null && ! in_array($newValue, $allowed, true)) {
                 return false;
             }
