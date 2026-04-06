@@ -1,0 +1,14 @@
+{
+    "private": true,
+    "scripts": {
+        "build:js": "esbuild resources/js/filament-kanban.js --bundle --outdir=resources/dist --minify --format=esm",
+        "build:css": "tailwindcss -i resources/css/filament-kanban.css -o resources/dist/filament-kanban.css --minify",
+        "build": "npm run build:js && npm run build:css"
+    },
+    "devDependencies": {
+        "@tailwindcss/cli": "^4.0.0",
+        "esbuild": "^0.25.0",
+        "sortablejs": "^1.15.0",
+        "tailwindcss": "^4.0.0"
+    }
+}

@@ -1,0 +1,51 @@
+.fi-kanban-board {
+    width: 100%;
+}
+
+.fi-kanban-column {
+    flex-shrink: 0;
+    max-height: calc(100vh - 200px);
+    display: flex;
+    flex-direction: column;
+}
+
+.fi-kanban-cards {
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* SortableJS ghost (placeholder in original position) */
+.fi-kanban-card-ghost {
+    opacity: 0.3;
+}
+
+/* SortableJS drag state (the element being dragged) */
+.fi-kanban-card-drag {
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15),
+        0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    transform: rotate(2deg);
+    cursor: grabbing !important;
+}
+
+/* SortableJS chosen state (before drag starts) */
+.fi-kanban-card-chosen {
+    cursor: grabbing !important;
+}
+
+/* Scrollbar styling for columns */
+.fi-kanban-cards::-webkit-scrollbar {
+    width: 4px;
+}
+
+.fi-kanban-cards::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.fi-kanban-cards::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 2px;
+}
+
+.dark .fi-kanban-cards::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+}
