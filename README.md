@@ -6,7 +6,7 @@ An advanced Kanban Board package for Filament. Drop it into any Resource's List 
 
 - PHP 8.3+
 - Laravel 13+
-- Filament 5+
+- Filament 4+
 
 ## Features
 
