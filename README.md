@@ -1,6 +1,6 @@
 # Filament Kanban Board
 
-An advanced Kanban Board package for Filament v5. Drop it into any Resource's List page to replace the table with a fully interactive board.
+An advanced Kanban Board package for Filament. Drop it into any Resource's List page to replace the table with a fully interactive board.
 
 ## Requirements
 
