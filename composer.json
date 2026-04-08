@@ -3,7 +3,7 @@
     "description": "Advanced Kanban Board for Filament Resources",
     "keywords": ["laravel", "filament", "kanban", "drag-drop"],
     "license": "MIT",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "type": "library",
     "require": {
         "php": "^8.2",
